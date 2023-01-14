@@ -1,6 +1,8 @@
 const express = require("express");
 const mysql = require("mysql");
 const rateLimit = require("express-rate-limit");
+const nodemailer = require("nodemailer");
+const randomstring = require("randomstring");
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -36,6 +38,7 @@ con.query("select * from registration", function (error, result) {
 app.get("/register", function (req, res) {
   res.sendFile(__dirname + "/register.html");
 });
+
 app.get("/login", function (req, res) {
   res.sendFile(__dirname + "/login.html");
 });
@@ -44,6 +47,49 @@ app.get("/dashboard", function (req, res) {
 });
 app.get("/success", function (req, res) {
   res.sendFile(__dirname + "/success.html");
+});
+app.get("/invalidcredentials" ,function(req,res) {
+  res.sendFile(__dirname + "/invalidcredentials.html");
+})
+
+const sendresetPasswordMail = async(Email ,id) => {
+  try {
+     const transporter =   nodemailer.createTransport({
+           host : "smtp.gmail.com",
+           port : 587,
+           secure : false,
+           requireTLS : true,
+           auth : {
+               user : "babudan517@gmail.com",
+               pass : "cnzupbqeyhqgmlde"
+           }
+       });
+
+       const mailOptions = {
+           from : "babudan517@gmail.com",
+           to : Email,
+           subject : 'For reset password',
+           text : 'hi ,please copy the link "http://127.0.0.1:7000/resetpassword?id='+id+'" reset your password'
+       }
+       transporter.sendMail(mailOptions ,function(error ,info){
+                  if(error){
+                     console.log(error);
+                  } else {
+                   console.log("Mail has been sent :-", info.response);
+                  }
+       });
+
+  }catch(err){
+   return res.status(400).send({status:false ,message : err.message});
+}
+}
+
+app.get("/forgetpassword", function (req, res) {
+  res.sendFile(__dirname + "/forgetpassword.html");
+});
+
+app.get("/resetpassword", function (req, res) {
+  res.sendFile(__dirname + "/resetpassword.html");
 });
 
 app.post("/register", function (req, res) {
@@ -54,20 +100,48 @@ app.post("/register", function (req, res) {
 
   var sql =
     "INSERT INTO registration(First_Name, Last_Name,Email,Password) VALUES('" +
-    First_Name +
-    "','" +
-    Last_Name +
-    "','" +
-    Email +
-    "','" +
-    Password +
-    "')";
+    First_Name + "','" + Last_Name + "','" + Email + "','" + Password + "')";
 
   con.query(sql, function (error, result) {
     if (error) throw console.log(error);
     res.redirect("/success");
   });
 }); 
+
+
+app.post("/forgetpassword" ,function(req,res) {
+  let email = req.body.Email;
+    console.log(email);
+    var sql = "select * from registration where Email = ?"
+      con.query( sql, [email], function (error, results) {
+      if(error){
+         throw error;
+      }else {
+      if (results.length > 0 && results[0].Email == email) {
+        let id = results[0].id
+        console.log(id)
+        sendresetPasswordMail(email ,id);
+        res.send("plss check your email")
+      } else {
+           res.send("Invalid email or email is not registeresd")
+      }
+    }
+    }
+  );
+})
+
+app.post("/resetpassword" ,function(req,res) {
+     let password = req.body.Password;
+   
+
+      var sql = "UPDATE registration set password=? where id=?";
+      var id = req.query.id;
+
+      con.query(sql ,[password ,id] ,function(error,result){
+        if(error) console.log(error);
+        res.redirect("/resetpassword")
+      })
+    })
 
 app.post("/login", limiter, function (req, res) {
   let email = req.body.Email;
@@ -77,10 +151,10 @@ app.post("/login", limiter, function (req, res) {
     "select * from registration where Email = ? and Password = ?",
     [email, password],
     function (error, results, fields) {
-      if (results.length > 0) {
+      if (results.length > 0 && results[0].Email == email && results[0].Password == password) {
         res.redirect("/dashboard");
       } else {
-        res.send("Invalid credentials");
+       res.redirect("/invalidcredentials")
       }
     }
   );
@@ -88,3 +162,7 @@ app.post("/login", limiter, function (req, res) {
 
 app.listen(7000);
   
+
+
+
+

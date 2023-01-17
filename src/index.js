@@ -2,8 +2,12 @@ const express = require("express");
 const mysql = require("mysql");
 const rateLimit = require("express-rate-limit");
 const nodemailer = require("nodemailer");
-const randomstring = require("randomstring");
+require('dotenv').config();
+// const randomstring = require("randomstring");
+const cookieParser = require('cookie-parser');
+const jwt = require("jsonwebtoken");
 const app = express();
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -48,9 +52,44 @@ app.get("/dashboard", function (req, res) {
 app.get("/success", function (req, res) {
   res.sendFile(__dirname + "/success.html");
 });
-app.get("/invalidcredentials" ,function(req,res) {
+app.get("/invalidcredentials",function(req,res) {
   res.sendFile(__dirname + "/invalidcredentials.html");
 })
+
+const isLoggedIn = function(req, res, next){
+  if (req.cookies.userSave) {
+    try {
+          // 1. Verify the token
+          const decoded = jwt.verify(req.cookies.userSave,
+              process.env.JWT_SECRET);
+          console.log(decoded);
+
+          // 2. Check if the user still exist
+          var sql = "select * from registration where id = ?"
+         con.query(sql, [decoded.id], function(err, results){
+              console.log(results);
+              if (results) {
+                  return next();
+              }else {
+                console.log(err)
+              }
+          });
+        } catch(error){
+          console.log(error);
+        }
+      } else {
+      next();
+  }
+}
+
+
+app.get("/forgetpassword", isLoggedIn ,function (req, res) {
+  res.sendFile(__dirname + "/forgetpassword.html");
+});
+
+app.get("/resetpassword", isLoggedIn  ,function (req, res) {
+  res.sendFile(__dirname + "/resetpassword.html");
+});
 
 const sendresetPasswordMail = async(Email ,id) => {
   try {
@@ -84,13 +123,7 @@ const sendresetPasswordMail = async(Email ,id) => {
 }
 }
 
-app.get("/forgetpassword", function (req, res) {
-  res.sendFile(__dirname + "/forgetpassword.html");
-});
 
-app.get("/resetpassword", function (req, res) {
-  res.sendFile(__dirname + "/resetpassword.html");
-});
 
 app.post("/register", function (req, res) {
   const First_Name = req.body.First_Name;
@@ -103,15 +136,17 @@ app.post("/register", function (req, res) {
     First_Name + "','" + Last_Name + "','" + Email + "','" + Password + "')";
 
   con.query(sql, function (error, result) {
-    if (error) throw console.log(error);
-    res.redirect("/success");
+    if (error) {
+      throw console.log(error);
+    }else {
+      console.log(result[0].id)
+      res.redirect("/success");
+    }
   });
 }); 
 
-
-app.post("/forgetpassword" ,function(req,res) {
+app.post("/forgetpassword"  ,function(req,res) {
   let email = req.body.Email;
-    console.log(email);
     var sql = "select * from registration where Email = ?"
       con.query( sql, [email], function (error, results) {
       if(error){
@@ -152,7 +187,22 @@ app.post("/login", limiter, function (req, res) {
     [email, password],
     function (error, results, fields) {
       if (results.length > 0 && results[0].Email == email && results[0].Password == password) {
-        res.redirect("/dashboard");
+        const id = results[0].id;
+  
+                const token = jwt.sign({ id }, process.env.JWT_SECRET, {
+                    expiresIn: process.env.JWT_EXPIRES_IN
+                });
+
+                console.log("the token is " + token);
+              
+                const cookieOptions = {
+                    expires: new Date(
+                        Date.now() + process.env.JWT_COOKIE_EXPIRES * 24 * 60 * 60 * 1000
+                    ),
+                    httpOnly: true
+                }
+                res.cookie('userSave', token, cookieOptions);
+        res.status(200).redirect("/dashboard");
       } else {
        res.redirect("/invalidcredentials")
       }
